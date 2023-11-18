@@ -21,7 +21,7 @@ char Symbol(Cell mask)
 }
 
 
-std::bitset<9> Mask(char symbol)
+Cell Mask(char symbol)
 {
    if(symbol == '.'){
       return std::bitset<9>("111111111");
@@ -39,7 +39,8 @@ Board GenerateSolvedBoard()
    std::default_random_engine gen(r());
    std::uniform_int_distribution<int> d(0,8);
 
-   std::array<std::uint8_t,81> cells{
+   // We return a permutation on the below board.
+   std::array<char,81> cells{
       0, 1, 2,  3, 4, 5,  6, 7, 8,
       3, 4, 5,  6, 7, 8,  0, 1, 2,
       6, 7, 8,  0, 1, 2,  3, 4, 5,
@@ -58,14 +59,12 @@ Board GenerateSolvedBoard()
       int j = d(gen);
       int k = (j/3)*3 + d(gen)%3;
 
-      //std::cout << "swap " << j << " & " << k << std::endl;
-
-      if(i%2){
+      if(i%2){ // Swap rows
          for(int l = 0; l < 9; ++l)
          {
             std::swap(cells[j*9 + l], cells[k*9 + l]);
          }
-      }else{
+      }else{ // Swap columns
          for(int l = 0; l < 9; ++l)
          {
             std::swap(cells[j + l*9], cells[k + l*9]);
@@ -73,6 +72,7 @@ Board GenerateSolvedBoard()
       }
    }
 
+   // Convert to board format
    Board board;
    for(int i = 0; i < 81; ++i) board[i] = Mask(cells[i]+'1');
    return board;
@@ -102,7 +102,7 @@ std::istream & operator>>(std::istream & in, Board & board)
    while(i < 81){
       int c = in.get();
       if(in.fail()){
-         throw std::runtime_error("Board operator>>: stream ended before full board read");
+         return in; // Fail bit is already set.
       }
       if(c == '.' || (c >= '1' && c <= '9')){
          board[i] = Mask(c);
@@ -113,6 +113,9 @@ std::istream & operator>>(std::istream & in, Board & board)
 }
 
 
+// For each single-valued cell, remove that value from the set of possibilities
+// for all neighbors. This greatly reduces the search space and also tells us
+// when the board is unsolvable if a cell has zero possibilities.
 std::optional<Board> Reduce(Board board)
 {
    std::queue<int> next;
@@ -126,10 +129,7 @@ std::optional<Board> Reduce(Board board)
       int i = next.front();
       next.pop();
       Cell c = board[i];
-      if(c.none()) return std::nullopt; // cell emptied while in queue
-
-      //std::cout << i << " mask " << c.to_string() << std::endl;
-           
+                 
       // row
       for(int j = 0; j < 9; ++j){
          int l = (i/9)*9 + j;
@@ -166,9 +166,10 @@ std::optional<Board> Reduce(Board board)
 
 std::optional<Board> Solve(Board board)
 {
+   // First reduce the board so we throw out searches doomed to failure.
    std::optional<Board> result = Reduce(board);
    if(!result){
-      std::cout << "Reduce failed" << std::endl;
+      // Reduce failed, so there is no solution.
       return std::nullopt;
    }
    board = *result;
@@ -177,21 +178,19 @@ std::optional<Board> Solve(Board board)
    for(int i = 0; i < 81; ++i){
       Cell c = board[i];
       if(c.count() == 0){
+         // There is a bad cell in our board. This should be caught by Reduce().
          return std::nullopt;
       }else if(c.count() > 1){
          for(int j = 0; j < 9; ++j){
-            if(c.test(j)){
+            if(c.test(j)){ // Only try possible values
                Board test = board;
                test[i] = Cell(1) << j;
 
-              // std::cout << "test" << std::endl << test << std::endl;
-
+               // See if there is a solution using this value at this cell.
                std::optional<Board> result = Solve(test);
                if(result) return result; // We found a solution
-               //std::cout << "failed" << std::endl;
             }
          }
-         //std::cout << "found nothing" << std::endl;
          return std::nullopt; // There were no solutions
       }
    }
