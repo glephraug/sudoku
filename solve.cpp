@@ -10,7 +10,13 @@ int main()
    Board board;
    std::cin >> board;
 
-   std::cout << board;
+   std::optional<Board> result = Solve(board);
+
+   if(result){
+      std::cout << *result << std::endl;
+   }else{
+      std::cout << "No solution found" << std::endl;
+   }
 
    return 0;
 }

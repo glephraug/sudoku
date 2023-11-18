@@ -3,9 +3,10 @@
 
 #include <random>
 #include <iostream>
+#include <queue>
 
 
-char Symbol(std::bitset<9> mask)
+char Symbol(Cell mask)
 {
    if(mask.count() == 1){
       char c = '0';
@@ -29,18 +30,6 @@ std::bitset<9> Mask(char symbol)
    }else{
       throw std::runtime_error("Mask: invalid character");
    }
-}
-
-
-Board::Board()
-{
-   cells.fill(Cell("111111111"));
-}
-
-
-void Board::set(int i, Cell c)
-{
-   cells[i] = c;
 }
 
 
@@ -85,7 +74,7 @@ Board GenerateSolvedBoard()
    }
 
    Board board;
-   for(int i = 0; i < 81; ++i) board.set(i, Mask(cells[i]+'1'));
+   for(int i = 0; i < 81; ++i) board[i] = Mask(cells[i]+'1');
    return board;
 }
 
@@ -101,7 +90,7 @@ std::ostream & operator<<(std::ostream & out, const Board & board)
             out << " ";
          }
       }
-      out << Symbol(board.cells[i]);
+      out << Symbol(board[i]);
    }
    return out;
 }
@@ -116,9 +105,95 @@ std::istream & operator>>(std::istream & in, Board & board)
          throw std::runtime_error("Board operator>>: stream ended before full board read");
       }
       if(c == '.' || (c >= '1' && c <= '9')){
-         board.cells[i] = Mask(c);
+         board[i] = Mask(c);
          ++i;
       }
    }
    return in;
+}
+
+
+std::optional<Board> Reduce(Board board)
+{
+   std::queue<int> next;
+   for(int i = 0; i < 81; ++i){
+      Cell c = board[i];
+      if(c.count() == 1) next.push(i);
+   }
+
+   while(!next.empty())
+   {
+      int i = next.front();
+      next.pop();
+      Cell c = board[i];
+      if(c.none()) return std::nullopt; // cell emptied while in queue
+
+      //std::cout << i << " mask " << c.to_string() << std::endl;
+           
+      // row
+      for(int j = 0; j < 9; ++j){
+         int l = (i/9)*9 + j;
+         if(l != i && (c&board[l]).any()){
+            board[l] &= ~c;
+            if(board[l].none()) return std::nullopt;
+            if(board[l].count() == 1) next.push(l);
+         }
+      }
+
+      // column
+      for(int j = 0; j < 9; ++j){
+         int l = i%9 + j*9;
+         if(l != i && (c&board[l]).any()){
+            board[l] &= ~c;
+            if(board[l].none()) return std::nullopt;
+            if(board[l].count() == 1) next.push(l);
+         }
+      }
+
+      // square
+      for(int j = 0; j < 9; ++j){
+         int l = (i/27)*27 + ((i%9)/3)*3 + (j/3)*9 + j%3;
+         if(l != i && (c&board[l]).any()){
+            board[l] &= ~c;
+            if(board[l].none()) return std::nullopt;
+            if(board[l].count() == 1) next.push(l);
+         }
+      }
+   }
+   return board;
+}
+
+
+std::optional<Board> Solve(Board board)
+{
+   std::optional<Board> result = Reduce(board);
+   if(!result){
+      std::cout << "Reduce failed" << std::endl;
+      return std::nullopt;
+   }
+   board = *result;
+
+   // Find an unknown cell and solve it
+   for(int i = 0; i < 81; ++i){
+      Cell c = board[i];
+      if(c.count() == 0){
+         return std::nullopt;
+      }else if(c.count() > 1){
+         for(int j = 0; j < 9; ++j){
+            if(c.test(j)){
+               Board test = board;
+               test[i] = Cell(1) << j;
+
+              // std::cout << "test" << std::endl << test << std::endl;
+
+               std::optional<Board> result = Solve(test);
+               if(result) return result; // We found a solution
+               //std::cout << "failed" << std::endl;
+            }
+         }
+         //std::cout << "found nothing" << std::endl;
+         return std::nullopt; // There were no solutions
+      }
+   }
+   return board; // The board is already solved
 }
